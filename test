@@ -1,165 +1,121 @@
-repeat (100) begin
-    start_item(add_trans);
-    assert (add_trans.randomize ());
-    `uvm_info("RANDOM_INPUT", $sformatf("P0_REQ: %b, P1_REQ: %b, P2_REQ: %b, P3_REQ: %b", add_trans.P0_REQ, add_trans.P1_REQ, add_trans.P2_REQ, add_trans.P3_REQ), UVM_MEDIUM)
-    finish_item(add_trans);
-end
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date  : 05/26/2022
+////////////////////////////////////////////////////
 
+`ifndef _ARBITER_AGENT_
+`define _ARBITER_AGENT_
 
-//Remove constraint of random test
-//add_trans.constraint_mode (0);
+class arbiter_agent extends uvm_agent;
+   `uvm_component_utils(arbiter_agent)
 
-//Create case by case with uvm_do_with
-`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==1; P2_REQ ==1; P3_REQ ==1;})
-`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==1; P2_REQ ==1; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==0; P2_REQ ==0; P3_REQ ==0;})
-//`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==0; P2_REQ ==0; P3_REQ ==0;})
+   uvm_analysis_port#(arbiter_package) agent_before;
+   uvm_analysis_port#(arbiter_package) agent_after;
+   arbiter_monitor_before monitor_before;
+   arbiter_monitor_after monitor_after;
+   arbiter_driver driver_trans;
+   arbiter_sequencer sequencer_trans;
+   function new(string name = "", uvm_component parent);
+      super.new(name, parent);
+   endfunction: new
+   
+   virtual function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      agent_before = new(.name("agent_before"), .parent(this));
+      agent_after = new(.name("agent_after"), .parent(this));
+      monitor_before = arbiter_monitor_before::type_id::create(.name("monitor_before"), .parent(this));
+      monitor_after = arbiter_monitor_after::type_id::create(.name("monitor_after"), .parent(this));
+      driver_trans = arbiter_driver::type_id::create(.name("driver_trans"), .parent(this));
+      sequencer_trans = arbiter_sequencer::type_id::create(.name("sequencer_trans"), .parent(this));
+   endfunction: build_phase
+   
+   virtual function void connect_phase(uvm_phase phase);
+      super.connect_phase(phase);
+      driver_trans.seq_item_port.connect(sequencer_trans.seq_item_export);
+      monitor_before.mon_before.connect(agent_before);
+      monitor_after.mon_after.connect(agent_after);
+   endfunction: connect_phase
+endclass: arbiter_agent
 
-`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==0; P2_REQ ==1; P3_REQ ==1;})
-`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==0; P2_REQ ==1; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==1; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==1; P3_REQ ==1;})
-
-`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==0; P3_REQ ==0;})
-`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==0; P3_REQ ==0;})
-//`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==0; P2_REQ ==1; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==0; P2_REQ ==1; P3_REQ ==1;})
-force arbiter_tb_top.arbiter_00.ARB_RST = 1'b1; 
-`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
-`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
-
-`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==1; P2_REQ ==1; P3_REQ ==0;})
-`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==1; P2_REQ ==1; P3_REQ ==0;})
-//`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==1; P2_REQ ==1; P3_REQ ==0;})
-//`uvm_do_with(add_trans, {P0_REQ == 1; P1_REQ ==1; P2_REQ ==1; P3_REQ ==0;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==0; P2_REQ ==0; P3_REQ ==0;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==0; P2_REQ ==0; P3_REQ ==0;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==0; P2_REQ ==0; P3_REQ ==0;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
-//`uvm_do_with(add_trans, {P0_REQ == 0; P1_REQ ==1; P2_REQ ==0; P3_REQ ==1;})
+`endif
 
 
 
-//Remove constraint of random test
-add_trans.constraint_mode (0);
 
-//Create case by case with uvm_create
-`uvm_create(add_trans)
- add_trans.P0_REQ = 1;
- add_trans.P1_REQ = 0;
- add_trans.P2_REQ = 0;
- add_trans.P3_REQ = 0;
-`uvm_send(add_trans)
-                  
-`uvm_create(add_trans)
- add_trans.P0_REQ = 0;
- add_trans.P1_REQ = 1;
- add_trans.P2_REQ = 1;
- add_trans.P3_REQ = 1;
-`uvm_send(add_trans)
 
-`uvm_create(add_trans)
- add_trans.P0_REQ = 1;
- add_trans.P1_REQ = 0;
- add_trans.P2_REQ = 1;
- add_trans.P3_REQ = 1;
-`uvm_send(add_trans)
 
-`uvm_create(add_trans)
- add_trans.P0_REQ = 1;
- add_trans.P1_REQ = 1;
- add_trans.P2_REQ = 0;
- add_trans.P3_REQ = 1;
-`uvm_send(add_trans)
 
-`uvm_create(add_trans)
- add_trans.P0_REQ = 1;
- add_trans.P1_REQ = 1;
- add_trans.P2_REQ = 1;
- add_trans.P3_REQ = 0;
-`uvm_send(add_trans)
 
-`uvm_create(add_trans)
- add_trans.P0_REQ = 0;
- add_trans.P1_REQ = 1;
- add_trans.P2_REQ = 1;
- add_trans.P3_REQ = 1;
-`uvm_send(add_trans)
 
-//`uvm_create(add_trans)
-// add_trans.P0_REQ = 0;
-// add_trans.P1_REQ = 1;
-// add_trans.P2_REQ = 0;
-// add_trans.P3_REQ = 1;
-//`uvm_send(add_trans)
-//
-//`uvm_create(add_trans)
-// add_trans.P0_REQ = 0;
-// add_trans.P1_REQ = 1;
-// add_trans.P2_REQ = 0;
-// add_trans.P3_REQ = 1;
-//`uvm_send(add_trans)
-//
-//`uvm_create(add_trans)
-// add_trans.P0_REQ = 0;
-// add_trans.P1_REQ = 1;
-// add_trans.P2_REQ = 0;
-// add_trans.P3_REQ = 1;
-//`uvm_send(add_trans)
-//
-//`uvm_create(add_trans)
-// add_trans.P0_REQ = 0;
-// add_trans.P1_REQ = 1;
-// add_trans.P2_REQ = 0;
-// add_trans.P3_REQ = 1;
-//`uvm_send(add_trans)
-//
-//`uvm_create(add_trans)
-// add_trans.P0_REQ = 0;
-// add_trans.P1_REQ = 1;
-// add_trans.P2_REQ = 0;
-// add_trans.P3_REQ = 1;
-//`uvm_send(add_trans)
-//
-//`uvm_create(add_trans)
-// add_trans.P0_REQ = 1;
-// add_trans.P1_REQ = 0;
-// add_trans.P2_REQ = 0;
-// add_trans.P3_REQ = 0;
-//`uvm_send(add_trans)
-//
-//`uvm_create(add_trans)
-// add_trans.P0_REQ = 0;
-// add_trans.P1_REQ = 1;
-// add_trans.P2_REQ = 1;
-// add_trans.P3_REQ = 1;
-//`uvm_send(add_trans)
-//
-//`uvm_create(add_trans)
-// add_trans.P0_REQ = 1;
-// add_trans.P1_REQ = 0;
-// add_trans.P2_REQ = 1;
-// add_trans.P3_REQ = 1;
-//`uvm_send(add_trans)
-//
-//`uvm_create(add_trans)
-// add_trans.P0_REQ = 1;
-// add_trans.P1_REQ = 1;
-// add_trans.P2_REQ = 0;
-// add_trans.P3_REQ = 1;
-//`uvm_send(add_trans)
-//
-//`uvm_create(add_trans)
-// add_trans.P0_REQ = 1;
-// add_trans.P1_REQ = 1;
-// add_trans.P2_REQ = 1;
-// add_trans.P3_REQ = 0;
-//`uvm_send(add_trans)
 
+
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date  : 05/26/2022
+////////////////////////////////////////////////////
+
+`ifndef _ARBITER_CONFIGURATION_
+`define _ARBITER_CONFIGURATION_
+
+class arbiter_configuration extends uvm_object;
+   `uvm_object_utils(arbiter_configuration)
+   function new (string name = "");
+      super.new(name);
+   endfunction: new
+endclass: arbiter_configuration
+
+`endif
+
+
+
+
+
+
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date  : 05/26/2022
+////////////////////////////////////////////////////
+
+`ifndef _ARBITER_DRIVER_
+`define _ARBITER_DRIVER_
+
+class arbiter_driver extends uvm_driver #(arbiter_package);
+   `uvm_component_utils(arbiter_driver)
+   virtual arbiter_if vif;
+   
+   function new (string name = "", uvm_component parent);
+      super.new(name, parent);
+   endfunction: new
+   
+   function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      void'(uvm_resource_db#(virtual arbiter_if)::read_by_name(.scope("ifs"), .name("arbiter_if"), .val(vif)));
+   endfunction: build_phase
+   
+   task run_phase(uvm_phase phase);
+      drive ();
+   endtask: run_phase
+   
+   virtual task drive();
+      arbiter_package trans;
+      forever begin 
+         seq_item_port.get_next_item(trans);
+         @(posedge vif.P0_CLK) begin
+                   vif.P0_REQ = trans.P0_REQ;
+         end
+         @(posedge vif.P1_CLK) begin
+                   vif.P1_REQ = trans.P1_REQ;
+         end
+         @(posedge vif.P2_CLK) begin
+                   vif.P2_REQ = trans.P2_REQ;
+         end
+         @(posedge vif.P3_CLK) begin
+                   vif.P3_REQ = trans.P3_REQ;
+         end
+         seq_item_port.item_done();
+      end  
+   endtask: drive
+   
+endclass: arbiter_driver
+
+`endif
