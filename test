@@ -3,119 +3,1208 @@
 //// Date  : 05/26/2022
 ////////////////////////////////////////////////////
 
-`ifndef _ARBITER_AGENT_
-`define _ARBITER_AGENT_
+`ifndef _ARBITER_MONITOR_
+`define _ARBITER_MONITOR_
 
-class arbiter_agent extends uvm_agent;
-   `uvm_component_utils(arbiter_agent)
-
-   uvm_analysis_port#(arbiter_package) agent_before;
-   uvm_analysis_port#(arbiter_package) agent_after;
-   arbiter_monitor_before monitor_before;
-   arbiter_monitor_after monitor_after;
-   arbiter_driver driver_trans;
-   arbiter_sequencer sequencer_trans;
-   function new(string name = "", uvm_component parent);
-      super.new(name, parent);
-   endfunction: new
-   
-   virtual function void build_phase(uvm_phase phase);
-      super.build_phase(phase);
-      agent_before = new(.name("agent_before"), .parent(this));
-      agent_after = new(.name("agent_after"), .parent(this));
-      monitor_before = arbiter_monitor_before::type_id::create(.name("monitor_before"), .parent(this));
-      monitor_after = arbiter_monitor_after::type_id::create(.name("monitor_after"), .parent(this));
-      driver_trans = arbiter_driver::type_id::create(.name("driver_trans"), .parent(this));
-      sequencer_trans = arbiter_sequencer::type_id::create(.name("sequencer_trans"), .parent(this));
-   endfunction: build_phase
-   
-   virtual function void connect_phase(uvm_phase phase);
-      super.connect_phase(phase);
-      driver_trans.seq_item_port.connect(sequencer_trans.seq_item_export);
-      monitor_before.mon_before.connect(agent_before);
-      monitor_after.mon_after.connect(agent_after);
-   endfunction: connect_phase
-endclass: arbiter_agent
-
-`endif
-
-
-
-
-
-
-
-
-
-
-
-////////////////////////////////////////////////////
-//// Author: trongk10@gmail.com
-//// Date  : 05/26/2022
-////////////////////////////////////////////////////
-
-`ifndef _ARBITER_CONFIGURATION_
-`define _ARBITER_CONFIGURATION_
-
-class arbiter_configuration extends uvm_object;
-   `uvm_object_utils(arbiter_configuration)
-   function new (string name = "");
-      super.new(name);
-   endfunction: new
-endclass: arbiter_configuration
-
-`endif
-
-
-
-
-
-
-////////////////////////////////////////////////////
-//// Author: trongk10@gmail.com
-//// Date  : 05/26/2022
-////////////////////////////////////////////////////
-
-`ifndef _ARBITER_DRIVER_
-`define _ARBITER_DRIVER_
-
-class arbiter_driver extends uvm_driver #(arbiter_package);
-   `uvm_component_utils(arbiter_driver)
+class arbiter_monitor_before extends uvm_monitor;
+   `uvm_component_utils(arbiter_monitor_before)
+   uvm_analysis_port#(arbiter_package) mon_before;
    virtual arbiter_if vif;
    
-   function new (string name = "", uvm_component parent);
+   function new (string name, uvm_component parent);
       super.new(name, parent);
    endfunction: new
    
    function void build_phase(uvm_phase phase);
       super.build_phase(phase);
       void'(uvm_resource_db#(virtual arbiter_if)::read_by_name(.scope("ifs"), .name("arbiter_if"), .val(vif)));
+      mon_before = new(.name("mon_before"), .parent(this));
    endfunction: build_phase
    
    task run_phase(uvm_phase phase);
-      drive ();
+      integer count = 0;
+      arbiter_package trans_mo1;
+      trans_mo1 = arbiter_package::type_id::create(.name("trans_mo1"), .contxt(get_full_name()));
+      forever begin
+          @(posedge vif.P0_CLK) begin
+             trans_mo1.P0_ACK = vif.P0_ACK;
+//             mon_before.write(trans_mo1);
+             `uvm_info("UVM_RESULT_FROM_DUT", $sformatf("P0_ACK: %b", trans_mo1.P0_ACK), UVM_LOW) 
+          end
+          @(posedge vif.P1_CLK) begin
+             trans_mo1.P1_ACK = vif.P1_ACK;
+             `uvm_info("UVM_RESULT_FROM_DUT", $sformatf("P1_ACK: %b", trans_mo1.P1_ACK), UVM_LOW)  
+          end
+          @(posedge vif.P2_CLK) begin
+             trans_mo1.P2_ACK = vif.P2_ACK;
+             `uvm_info("UVM_RESULT_FROM_DUT", $sformatf("P2_ACK: %b", trans_mo1.P2_ACK), UVM_LOW)
+          end
+          @(posedge vif.P3_CLK) begin
+             trans_mo1.P3_ACK = vif.P3_ACK;
+             `uvm_info("UVM_RESULT_FROM_DUT", $sformatf("P3_ACK: %b", trans_mo1.P3_ACK), UVM_LOW)
+          end
+             mon_before.write(trans_mo1);
+       end
    endtask: run_phase
+
+endclass: arbiter_monitor_before
+
+
+
+class arbiter_monitor_after extends uvm_monitor;
+   `uvm_component_utils(arbiter_monitor_after)
+   virtual arbiter_if vif;
+   uvm_analysis_port#(arbiter_package) mon_after;
+   arbiter_package trans_cv;
+   arbiter_package trans_mo2;
+    
+   covergroup arbiter_cov;
+      P0_ACK_cv: coverpoint trans_cv.P0_ACK;
+      P1_ACK_cv: coverpoint trans_cv.P1_ACK;
+      P2_ACK_cv: coverpoint trans_cv.P2_ACK;
+      P3_ACK_cv: coverpoint trans_cv.P3_ACK;
+      cross P0_ACK_cv, P1_ACK_cv, P2_ACK_cv, P3_ACK_cv;
+   endgroup: arbiter_cov
+
+   function new(string name, uvm_component parent);
+      super.new(name, parent);
+      arbiter_cov = new;
+   endfunction: new
    
-   virtual task drive();
-      arbiter_package trans;
-      forever begin 
-         seq_item_port.get_next_item(trans);
+   function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      void'(uvm_resource_db#(virtual arbiter_if)::read_by_name(.scope("ifs"), .name("arbiter_if"), .val(vif)));
+      mon_after = new(.name("mon_after"), .parent(this));
+   endfunction: build_phase
+   
+   task run_phase(uvm_phase phase);
+      integer count = 0;
+      integer tmp = 0;
+      trans_mo2 = arbiter_package::type_id::create(.name("trans_mo2"), .contxt(get_full_name()));
+      forever begin
          @(posedge vif.P0_CLK) begin
-                   vif.P0_REQ = trans.P0_REQ;
+            trans_mo2.P0_ACK = 1'b0;
          end
          @(posedge vif.P1_CLK) begin
-                   vif.P1_REQ = trans.P1_REQ;
+            trans_mo2.P1_ACK = 1'b0;
          end
          @(posedge vif.P2_CLK) begin
-                   vif.P2_REQ = trans.P2_REQ;
+            trans_mo2.P2_ACK = 1'b0;
          end
          @(posedge vif.P3_CLK) begin
-                   vif.P3_REQ = trans.P3_REQ;
+            trans_mo2.P3_ACK = 1'b0;
          end
-         seq_item_port.item_done();
-      end  
-   endtask: drive
-   
-endclass: arbiter_driver
+         trans_cv = trans_mo2;
+         arbiter_cov.sample();
+         mon_after.write(trans_mo2);
+      end
+   endtask: run_phase
+endclass: arbiter_monitor_after
 
 `endif
+
+
+
+
+
+
+
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date  : 05/26/2022
+////////////////////////////////////////////////////
+
+`ifndef _ARBITER_ENV_
+`define _ARBITER_ENV_
+
+class arbiter_env extends uvm_env;
+   `uvm_component_utils(arbiter_env)
+   
+   arbiter_scoreboard score_trans;
+   arbiter_agent agent_trans;
+   
+   function new(string name = "", uvm_component parent);
+      super.new(name, parent);
+   endfunction: new
+   
+   function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      score_trans = arbiter_scoreboard::type_id::create(.name("score_trans"), .parent(this));
+      agent_trans = arbiter_agent::type_id::create(.name("agent_trans"), .parent(this));
+   endfunction: build_phase
+   
+   function void connect_phase(uvm_phase phase);
+      super.connect_phase(phase);
+      agent_trans.agent_before.connect(score_trans.monitor_before);
+      agent_trans.agent_after.connect(score_trans.monitor_after);
+   endfunction: connect_phase
+   
+endclass: arbiter_env
+
+`endif
+
+
+
+
+
+
+
+
+
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date  : 05/26/2022
+////////////////////////////////////////////////////
+
+`ifndef _ARBITER_INTERFACE_
+`define _ARBITER_INTERFACE_
+
+interface arbiter_if;
+   logic ARB_RST;
+   logic ARB_CLK;
+   logic P0_CLK;
+   logic P1_CLK;
+   logic P2_CLK;
+   logic P3_CLK;
+   logic P0_REQ;
+   logic P1_REQ;
+   logic P2_REQ;
+   logic P3_REQ;
+   logic P0_ACK;
+   logic P1_ACK;
+   logic P2_ACK;
+   logic P3_ACK;
+endinterface: arbiter_if
+
+`endif
+
+
+
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date  : 05/26/2022
+////////////////////////////////////////////////////
+
+`ifndef _ARBITER_PKG_
+`define _ARBITER_PKG_
+
+`include "uvm_macros.svh"
+
+package arbiter_pkg;
+   import uvm_pkg::*;
+   `include "arbiter_sequense.sv"
+   `include "arbiter_monitor.sv"
+   `include "arbiter_driver.sv"
+   `include "arbiter_agent.sv"
+   `include "arbiter_scoreboard.sv"
+   `include "arbiter_config.sv"
+   `include "arbiter_env.sv"
+   `include "arbiter_test.sv"
+endpackage: arbiter_pkg
+
+`endif
+
+
+
+
+
+
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date  : 05/26/2022
+////////////////////////////////////////////////////
+
+`ifndef _ARBITER_SCOREBOARD_
+`define _ARBITER_SCOREBOARD_
+
+class arbiter_scoreboard extends uvm_scoreboard;
+    
+   `uvm_component_utils(arbiter_scoreboard)
+   uvm_analysis_export #(arbiter_package) monitor_before;
+   uvm_analysis_export #(arbiter_package) monitor_after;
+   arbiter_package trans_before;
+   arbiter_package trans_after;
+   uvm_tlm_analysis_fifo#(arbiter_package) fifo_before;
+   uvm_tlm_analysis_fifo#(arbiter_package) fifo_after;
+   
+   function new (string name = "", uvm_component parent);
+      super.new(name, parent);
+      trans_before = new("trans_before");
+      trans_after = new("trans_after");
+   endfunction: new
+   
+   function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      fifo_before = new(.name("fifo_before"), .parent(this));
+      fifo_after = new(.name("fifo_after"), .parent(this));
+      monitor_before = new(.name("monitor_before"), .parent(this));
+      monitor_after = new(.name("monitor_after"), .parent(this));
+   endfunction: build_phase
+   
+   function void connect_phase(uvm_phase phase);
+      monitor_before.connect(fifo_before.analysis_export);
+      monitor_after.connect(fifo_after.analysis_export);
+   endfunction: connect_phase
+
+   task run();
+      forever begin
+         fifo_before.get(trans_before);
+         fifo_after.get(trans_after);
+         compare();
+      end
+   endtask: run
+   
+   virtual function void compare();
+    //// Coding for checker
+   endfunction: compare
+
+endclass: arbiter_scoreboard
+
+`endif
+
+
+
+
+
+
+
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date  : 05/26/2022
+////////////////////////////////////////////////////
+
+`ifndef _ARBITER_PACKAGE_
+`define _ARBITER_PACKAGE_
+
+class arbiter_package extends uvm_sequence_item;
+
+   bit  P0_ACK;
+   bit  P1_ACK;
+   bit  P2_ACK;
+   bit  P3_ACK;
+
+   rand bit P0_REQ;
+   rand bit P1_REQ;
+   rand bit P2_REQ;
+   rand bit P3_REQ;
+
+   
+   constraint constr_P0 {
+      P0_REQ inside {[0:1]};
+   }
+   
+   constraint constr_P1 {
+      P0_REQ inside {[0:1]};
+   }
+   
+   constraint constr_P2 {
+      P0_REQ inside {[0:1]};
+   }
+
+   constraint constr_P3 {
+      P0_REQ inside {[0:1]};
+   }
+
+   
+   function new (string name = "");
+      super.new(name);
+   endfunction: new
+   
+   `uvm_object_utils_begin(arbiter_package)
+      `uvm_field_int(P0_ACK, UVM_ALL_ON)
+      `uvm_field_int(P1_ACK, UVM_ALL_ON)
+      `uvm_field_int(P2_ACK, UVM_ALL_ON)
+      `uvm_field_int(P3_ACK, UVM_ALL_ON)
+      `uvm_field_int(P0_REQ, UVM_ALL_ON)
+      `uvm_field_int(P1_REQ, UVM_ALL_ON)
+      `uvm_field_int(P2_REQ, UVM_ALL_ON)
+      `uvm_field_int(P3_REQ, UVM_ALL_ON)
+   `uvm_object_utils_end
+
+endclass: arbiter_package
+`endif
+
+
+`ifndef _ARBITER_SEQUENCE_
+`define _ARBITER_SEQUENCE_
+
+class arbiter_sequence extends uvm_sequence #(arbiter_package);
+   `uvm_object_utils(arbiter_sequence)
+   
+   function new (string name = "");
+     super.new(name);
+   endfunction: new
+   
+   virtual task pre_body();
+      `uvm_info("CHECK_FLAG_PRE_BODY", $sformatf("Optional"), UVM_MEDIUM)
+       if (starting_phase != null) starting_phase.raise_objection(this);
+   endtask: pre_body
+ 
+    virtual task body();
+       arbiter_package add_trans;
+          add_trans = arbiter_package::type_id::create(.name("add_trans"), .contxt(get_full_name()));
+          `ifdef RANDOM
+             `include "TM/tm_uvm_random.v"
+          `elsif UVM_CREATE
+             `include "TM/tm_uvm_create.v"
+          `elsif UVM_DO_WITH
+             `include "TM/tm_uvm_do_with.v"
+          `else
+             repeat (100) begin
+             start_item(add_trans);
+             assert (add_trans.randomize ());
+             `uvm_info("RANDOM_INPUT", $sformatf("P0_REQ: %b, P1_REQ: %b, P2_REQ: %b, P3_REQ: %b", add_trans.P0_REQ, add_trans.P1_REQ, add_trans.P2_REQ, add_trans.P3_REQ), UVM_MEDIUM)
+             finish_item(add_trans);
+             end
+          `endif
+   endtask: body
+ 
+ 
+   virtual task post_body();
+      `uvm_info("CHECK_FLAG_POST_BODY", $sformatf("Optional"), UVM_MEDIUM)
+      if (starting_phase != null) starting_phase.drop_objection(this);
+   endtask:post_body
+ 
+ 
+ 
+endclass: arbiter_sequence
+`endif
+
+`ifndef _UVM_SEQUENCER_
+`define _UVM_SEQUENCER_
+
+typedef uvm_sequencer#(arbiter_package) arbiter_sequencer ;
+`endif
+
+
+
+
+
+
+
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date  : 05/26/2022
+////////////////////////////////////////////////////
+
+`include "arbiter_pkg.sv"
+`include "arbiter_if.sv"
+`include "RTL/arbiter.v"
+`include "SVA/sva_test.v"
+
+module arbiter_tb_top;
+
+   import uvm_pkg::*;
+   import arbiter_pkg::*;
+   arbiter_if vif();
+   
+   arbiter arbiter_00 (
+      vif.ARB_RST,
+      vif.ARB_CLK,
+      vif.P0_CLK,
+      vif.P1_CLK,
+      vif.P2_CLK,
+      vif.P3_CLK,
+      vif.P0_REQ,
+      vif.P1_REQ,
+      vif.P2_REQ,
+      vif.P3_REQ,
+      vif.P0_ACK,
+      vif.P1_ACK,
+      vif.P2_ACK,
+      vif.P3_ACK);
+
+   bind arbiter sva sva_00 (
+      .ARB_RST(ARB_RST),
+      .ARB_CLK(ARB_CLK),
+      .P0_CLK(P0_CLK),
+      .P1_CLK(P1_CLK),
+      .P2_CLK(P2_CLK),
+      .P3_CLK(P3_CLK),
+      .P0_REQ_sync(P0_REQ_sync),
+      .P1_REQ_sync(P1_REQ_sync),
+      .P2_REQ_sync(P2_REQ_sync),
+      .P3_REQ_sync(P3_REQ_sync),
+      .P0_ACK_sync(P0_ACK_sync),
+      .P1_ACK_sync(P1_ACK_sync),
+      .P2_ACK_sync(P2_ACK_sync),
+      .P3_ACK_sync(P3_ACK_sync)
+   );   
+
+
+   initial begin
+      uvm_resource_db #(virtual arbiter_if)::set(.scope("ifs"), .name("arbiter_if") , .val(vif));
+      run_test();
+   end
+   
+
+   `include "generate_clk_and_reset.v"
+   
+   initial begin
+      $recordfile("filename.trn");
+      $recordvars();
+   end
+
+endmodule: arbiter_tb_top
+
+
+
+
+
+
+
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date  : 05/26/2022
+////////////////////////////////////////////////////
+
+`ifndef _ARBITER_TEST_
+`define _ARBITER_TEST_
+
+class arbiter_test extends uvm_test;
+   `uvm_component_utils(arbiter_test)
+   
+   arbiter_env env_trans;
+      function new (string name = "", uvm_component parent);
+      super.new(name, parent);
+   endfunction: new
+   
+   function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      env_trans = arbiter_env::type_id::create(.name("env_trans"), .parent(this));
+   endfunction: build_phase
+   
+   task run_phase(uvm_phase phase);
+      arbiter_sequence sequencer_trans;
+      phase.raise_objection(.obj(this));
+      sequencer_trans = arbiter_sequence::type_id::create(.name("sequencer_trans"), .contxt(get_full_name()));
+      assert(sequencer_trans.randomize());
+      `uvm_info("UVM_TEST_LP","START Simulation",UVM_NONE)
+      sequencer_trans.start(env_trans.agent_trans.sequencer_trans);
+      phase.drop_objection(.obj(this));
+   endtask: run_phase
+
+endclass: arbiter_test
+
+`endif
+
+
+
+
+
+
+
+
+
+   initial begin
+      vif.ARB_CLK = 1;
+      vif.P0_CLK  = 1;
+      vif.P1_CLK  = 1;
+      vif.P2_CLK  = 1;
+      vif.P3_CLK  = 1;
+      vif.ARB_RST = 1;
+      #80;
+      vif.ARB_RST = 0;
+//      #300;
+//      vif.ARB_RST = 1; //// Test for reset SVA
+      #20000;
+   end
+
+   always #8  vif.ARB_CLK = ~vif.ARB_CLK;
+   always #9  vif.P0_CLK  = ~vif.P0_CLK;
+   always #10 vif.P1_CLK  = ~vif.P1_CLK;
+   always #11 vif.P2_CLK  = ~vif.P2_CLK;
+   always #12 vif.P3_CLK  = ~vif.P3_CLK;
+
+
+
+
+
+
+
+
+#!/bin/csh -f
+
+source /common/appl/Env/Cadence/cadence.CSHRC_incisiv14.20.007
+
+bs -m "HOSTGR_S HOSTGR_M HOSTGR_L HOSTGR_GUI" -os "SLES10 RHEL5" -M 400 ncverilog +nc64bit +licq \
+ -uvm -sv arbiter_tb_top.sv +UVM_TESTNAME=arbiter_test \
+    +ncelabargs+" -access +rw " \
+    -define $1 \ 
+
+
+
+
+
+
+////////////////////////////////////////////////////
+//// Author: trongk10@gmail.com
+//// Date: 29/05/2022
+////////////////////////////////////////////////////
+Step 1: Modify TM in folder: ./TM
+Step 2: If you want to run with random mode. Please run:
+   ./go_sim.csh RANDOM
+   TM/tm_uvm_random.v will be executed
+Step 3: If you want to run with specific cases (uvm_do_with). Please run:
+   ./go_sim.csh UVM_DO_WITH
+   TM/tm_uvm_do_with.v will be executed
+Step 2: If you want to run with specific case (uvm_create). Please run:
+   ./go_sim.csh UVM_CREATE
+   TM/tm_uvm_create.v will be executed
+
+
+
+
+
+
+
+
+ncverilog(64): 14.20-s007: (c) Copyright 1995-2015 Cadence Design Systems, Inc.
+TOOL:	ncverilog	14.20-s007: Started on May 29, 2022 at 14:20:07 ICT
+ncverilog
+	+nclicqueue
+	+nc64bit
+	+licq
+	-uvm
+	-sv
+	arbiter_tb_top.sv
+	+UVM_TESTNAME=arbiter_test
+	+ncelabargs+" -access +rw "
+	-define
+	 
+Recompiling... reason: file './SVA/sva_test.v' is newer than expected.
+	expected: Sun May 29 14:10:43 2022
+	actual:   Sun May 29 14:11:23 2022
+Compiling UVM packages (uvm_pkg.sv cdns_uvm_pkg.sv) using uvmhome location /common/appl/Cadence/INCISIV14.20.007/tools/methodology/UVM/CDNS-1.1d
+file: arbiter_tb_top.sv
+	module worklib.sva:v
+		errors: 0, warnings: 0
+	module worklib.arbiter_tb_top:sv
+		errors: 0, warnings: 0
+		Caching library 'worklib' ....... Done
+	Elaborating the design hierarchy:
+		Caching library 'worklib' ....... Done
+	Building instance overlay tables: .................... Done
+	Generating native compiled code:
+		worklib.arbiter:v <0x032f36a4>
+			streams:  41, words: 16969
+		worklib.arbiter_tb_top:sv <0x0a62ff59>
+			streams:  60, words: 79796
+		worklib.sva:v <0x55a774ff>
+			streams:  62, words: 48003
+		worklib.uvm_pkg:sv <0x06c8e7d0>
+			streams:  24, words: 46502
+		worklib.uvm_pkg:sv <0x1a428bde>
+			streams:  26, words: 43079
+		worklib.uvm_pkg:sv <0x235717ec>
+			streams:  24, words: 34022
+		worklib.uvm_pkg:sv <0x4a25c958>
+			streams:  47, words: 59405
+		worklib.uvm_pkg:sv <0x4b0df329>
+			streams:  24, words: 31954
+		worklib.uvm_pkg:sv <0x6b7ae70e>
+			streams:  24, words: 29833
+	Building instance specific data structures.
+	Loading native compiled code:     .................... Done
+	Design hierarchy summary:
+		                       Instances  Unique
+		Modules:                      11       5
+		Interfaces:                    1       1
+		Verilog packages:              5       5
+		Registers:                 14125   10419
+		Scalar wires:                 74       -
+		Expanded wires:                8       4
+		Vectored wires:                4       -
+		Named events:                  4      12
+		Always blocks:               102     101
+		Initial blocks:              319     189
+		Parallel blocks:              26      27
+		Cont. assignments:            50      33
+		Pseudo assignments:           14      14
+		Assertions:                   20      20
+		Covergroup Instances:          0       1
+		SV Class declarations:       200     313
+		SV Class specializations:    382     382
+	Writing initial simulation snapshot: worklib.arbiter_tb_top:sv
+Loading snapshot worklib.arbiter_tb_top:sv .................... Done
+SVSEED default: 1
+ncsim: *W,WSEM2009: This SystemVerilog simulation was not run with the '-sem2009' option which provides 1800-2009 SystemVerilog simulation semantics. In future, '-sem2009' functionality will become the default for SystemVerilog environments. Until then, run your SystemVerilog  simulations using the '-sem2009' option and report any functional or performance issues to Cadence. To disable this warning, use the '-nowarn WSEM2009' command-line option. There is no impact to non-SystemVerilog environments.
+ncsim> source /common/appl/Cadence/INCISIV14.20.007/tools/inca/files/ncsimrc
+ncsim> source /common/appl/Cadence/INCISIV14.20.007/tools/methodology/UVM/CDNS-1.1d/additions/sv/files/tcl/uvm_sim.tcl
+ncsim> run
+----------------------------------------------------------------
+CDNS-UVM-1.1d (14.20-s007)
+(C) 2007-2013 Mentor Graphics Corporation
+(C) 2007-2013 Cadence Design Systems, Inc.
+(C) 2006-2013 Synopsys, Inc.
+(C) 2011-2013 Cypress Semiconductor Corp.
+----------------------------------------------------------------
+
+  ***********       IMPORTANT RELEASE NOTES         ************
+
+  You are using a version of the UVM library that has been compiled
+  with `UVM_NO_DEPRECATED undefined.
+  See http://www.eda.org/svdb/view.php?id=3313 for more details.
+
+  You are using a version of the UVM library that has been compiled
+  with `UVM_OBJECT_MUST_HAVE_CONSTRUCTOR undefined.
+  See http://www.eda.org/svdb/view.php?id=3770 for more details.
+
+      (Specify +UVM_NO_RELNOTES to turn off this notice)
+
+UVM_INFO @ 0: reporter [RNTST] Running test arbiter_test...
+UVM_INFO arbiter_test.sv(27) @ 0: uvm_test_top [UVM_TEST_LP] START Simulation
+UVM_INFO arbiter_sequense.sv(69) @ 0: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [CHECK_FLAG_PRE_BODY] Optional
+UVM_INFO arbiter_sequense.sv(86) @ 0: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 20: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 40: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 60: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 80: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 80: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 100: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 120: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 140: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 160: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 160: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 180: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 200: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 220: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 240: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 240: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 260: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 280: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 300: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 320: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 320: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 340: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 360: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 380: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 400: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 400: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 420: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 440: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 460: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 480: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 480: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 500: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 520: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 540: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 560: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 560: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 580: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 600: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 620: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 640: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 640: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 660: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 680: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 700: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 720: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 720: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 740: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 760: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 780: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 800: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 800: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 820: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 840: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 860: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 880: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 880: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 900: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 920: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 940: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 960: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 960: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 980: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1000: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 1020: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 1040: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 1040: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 1060: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1080: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1100: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 1120: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 1120: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 1140: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1160: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1180: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 1200: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 1200: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 1220: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 1240: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1260: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 1280: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 1280: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 1300: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1320: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1340: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 1360: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 1360: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 1380: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1400: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1420: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 1440: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 1440: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 1460: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1480: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1500: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 1520: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 1520: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 1540: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1560: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1580: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 1600: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 1600: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 1620: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1640: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1660: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 1680: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 1680: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 1700: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1720: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1740: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 1760: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 1760: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 1780: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1800: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1820: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 1840: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 1840: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 1860: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1880: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1900: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 1920: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 1920: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 1940: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 1960: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 1980: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 2000: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 2000: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 2020: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 2040: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 2060: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+   $rose(P0_ACK_sync);
+       |
+ncsim: *E,ASRTST (./SVA/sva_test.v,68): (time 2060 NS) Assertion arbiter_tb_top.arbiter_00.sva_00.sva_prior_chk_P3_P0 has failed (3 cycles, starting 2020 NS)
+UVM_INFO arbiter_monitor.sv(44) @ 2080: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 2080: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 2100: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+   $rose(P2_ACK_sync);
+       |
+ncsim: *E,ASRTST (./SVA/sva_test.v,54): (time 2100 NS) Assertion arbiter_tb_top.arbiter_00.sva_00.sva_prior_chk_P1_P2 has failed (3 cycles, starting 2060 NS)
+UVM_INFO arbiter_monitor.sv(36) @ 2120: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 2140: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 2160: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 2160: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 2180: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 2200: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 2220: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 2240: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 2240: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 2260: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 2280: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 2300: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 2320: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 2320: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 2340: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 2360: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 2380: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 2400: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 2400: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 2420: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 2440: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 2460: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 2480: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 2480: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 2500: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 2520: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 2540: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 2560: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 2560: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 2580: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 2600: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 2620: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 2640: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 2640: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 2660: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 2680: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 2700: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 2720: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 2720: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 2740: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 2760: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 2780: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 2800: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 2800: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 2820: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 2840: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 2860: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 2880: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 2880: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 2900: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 2920: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 2940: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 2960: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 2960: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 2980: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 3000: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3020: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 3040: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 3040: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 3060: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 3080: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3100: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 3120: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 3120: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 3140: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 3160: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3180: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 3200: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 3200: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 3220: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 3240: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 3260: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 3280: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 3280: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 3300: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 3320: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3340: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 3360: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 3360: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 3380: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 3400: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3420: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 3440: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 3440: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 3460: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 3480: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3500: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 3520: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 3520: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 3540: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 3560: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3580: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 3600: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 3600: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 3620: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 3640: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3660: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 3680: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 3680: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 3700: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 3720: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3740: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 3760: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 3760: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 3780: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 3800: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3820: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 3840: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 3840: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 3860: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 3880: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3900: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 3920: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 3920: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 3940: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 3960: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 3980: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4000: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 4000: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 4020: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4040: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4060: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4080: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 4080: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 4100: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4120: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4140: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+   $rose(P0_ACK_sync);
+       |
+ncsim: *E,ASRTST (./SVA/sva_test.v,68): (time 4140 NS) Assertion arbiter_tb_top.arbiter_00.sva_00.sva_prior_chk_P3_P0 has failed (3 cycles, starting 4100 NS)
+UVM_INFO arbiter_monitor.sv(44) @ 4160: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 4160: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 4180: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4200: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4220: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4240: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 4240: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 4260: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 4280: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4300: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4320: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 4320: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 4340: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4360: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 4380: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4400: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 4400: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 4420: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4440: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4460: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4480: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 4480: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 4500: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4520: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4540: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4560: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 4560: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 4580: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4600: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4620: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4640: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 4640: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 4660: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4680: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4700: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+   $rose(P0_ACK_sync);
+       |
+ncsim: *E,ASRTST (./SVA/sva_test.v,68): (time 4700 NS) Assertion arbiter_tb_top.arbiter_00.sva_00.sva_prior_chk_P3_P0 has failed (3 cycles, starting 4660 NS)
+UVM_INFO arbiter_monitor.sv(44) @ 4720: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 4720: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 4740: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4760: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4780: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4800: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 4800: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 4820: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4840: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4860: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4880: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 4880: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 4900: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 4920: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 4940: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 4960: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 4960: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 4980: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 5000: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5020: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5040: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 5040: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 5060: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 5080: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5100: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5120: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5120: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 5140: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 5160: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5180: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5200: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5200: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 5220: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 5240: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5260: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5280: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5280: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 5300: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 5320: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5340: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5360: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5360: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 5380: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 5400: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5420: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5440: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5440: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 5460: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 5480: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5500: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5520: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5520: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 5540: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 5560: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 5580: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5600: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5600: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 5620: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 5640: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5660: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5680: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5680: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 5700: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 5720: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5740: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5760: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5760: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 5780: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 5800: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5820: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5840: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5840: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 5860: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 5880: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 5900: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 5920: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 5920: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+   $rose(P1_ACK_sync);
+       |
+ncsim: *E,ASRTST (./SVA/sva_test.v,47): (time 5920 NS) Assertion arbiter_tb_top.arbiter_00.sva_00.sva_prior_chk_P0_P1 has failed (3 cycles, starting 5880 NS)
+UVM_INFO arbiter_monitor.sv(32) @ 5940: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 5960: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 5980: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6000: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6000: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 6020: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6040: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 6060: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6080: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 6080: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 6100: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6120: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 6140: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6160: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 6160: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 6180: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6200: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 6220: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+   $rose(P1_ACK_sync);
+       |
+ncsim: *E,ASRTST (./SVA/sva_test.v,143): (time 6220 NS) Assertion arbiter_tb_top.arbiter_00.sva_00.sva_chk_P3_P1 has failed (3 cycles, starting 6180 NS)
+UVM_INFO arbiter_monitor.sv(44) @ 6240: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6240: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 6260: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6280: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 6300: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6320: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6320: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 6340: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 6360: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 6380: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6400: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6400: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 6420: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6440: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 6460: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6480: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6480: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 6500: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6520: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 6540: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6560: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6560: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 6580: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6600: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 6620: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 6640: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6640: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 6660: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6680: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 6700: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6720: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6720: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 6740: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6760: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 6780: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6800: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6800: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 6820: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6840: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 6860: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6880: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6880: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 6900: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 6920: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 6940: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 6960: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 6960: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 6980: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 7000: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7020: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7040: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 7040: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+   $rose(P1_ACK_sync);
+       |
+ncsim: *E,ASRTST (./SVA/sva_test.v,47): (time 7040 NS) Assertion arbiter_tb_top.arbiter_00.sva_00.sva_prior_chk_P0_P1 has failed (3 cycles, starting 7 US)
+UVM_INFO arbiter_monitor.sv(32) @ 7060: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 7080: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7100: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7120: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 1
+UVM_INFO arbiter_sequense.sv(86) @ 7120: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 7140: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 7160: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7180: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7200: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 7200: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 7220: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 7240: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 7260: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7280: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 7280: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 7300: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 7320: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 1
+UVM_INFO arbiter_monitor.sv(40) @ 7340: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7360: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 7360: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 0, P1_REQ: 0, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 7380: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 7400: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7420: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 1
+UVM_INFO arbiter_monitor.sv(44) @ 7440: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 7440: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 7460: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 0
+UVM_INFO arbiter_monitor.sv(36) @ 7480: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7500: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7520: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 7520: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 7540: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 7560: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7580: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7600: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 7600: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 0, P2_REQ: 1, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 7620: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 7640: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7660: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7680: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 7680: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 7700: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 7720: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7740: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7760: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 7760: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 1, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 7780: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 7800: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7820: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7840: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 7840: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 1
+UVM_INFO arbiter_monitor.sv(32) @ 7860: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 7880: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7900: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 7920: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(86) @ 7920: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [RANDOM_INPUT] P0_REQ: 1, P1_REQ: 1, P2_REQ: 0, P3_REQ: 0
+UVM_INFO arbiter_monitor.sv(32) @ 7940: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P0_ACK: 1
+UVM_INFO arbiter_monitor.sv(36) @ 7960: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P1_ACK: 0
+UVM_INFO arbiter_monitor.sv(40) @ 7980: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P2_ACK: 0
+UVM_INFO arbiter_monitor.sv(44) @ 8000: uvm_test_top.env_trans.agent_trans.monitor_before [UVM_RESULT_FROM_DUT] P3_ACK: 0
+UVM_INFO arbiter_sequense.sv(94) @ 8000: uvm_test_top.env_trans.agent_trans.sequencer_trans@@sequencer_trans [CHECK_FLAG_POST_BODY] Optional
+UVM_INFO /common/appl/Cadence/INCISIV14.20.007/tools/methodology/UVM/CDNS-1.1d/sv/src/base/uvm_objection.svh(1268) @ 8000: reporter [TEST_DONE] 'run' phase is ready to proceed to the 'extract' phase
+
+--- UVM Report catcher Summary ---
+
+
+Number of demoted UVM_FATAL reports  :    0
+Number of demoted UVM_ERROR reports  :    0
+Number of demoted UVM_WARNING reports:    0
+Number of caught UVM_FATAL reports   :    0
+Number of caught UVM_ERROR reports   :    0
+Number of caught UVM_WARNING reports :    0
+
+--- UVM Report Summary ---
+
+** Report counts by severity
+UVM_INFO :  505
+UVM_WARNING :    0
+UVM_ERROR :    0
+UVM_FATAL :    0
+** Report counts by id
+[CHECK_FLAG_POST_BODY]     1
+[CHECK_FLAG_PRE_BODY]     1
+[RANDOM_INPUT]   100
+[RNTST]     1
+[TEST_DONE]     1
+[UVM_RESULT_FROM_DUT]   400
+[UVM_TEST_LP]     1
+Simulation complete via $finish(1) at time 8 US + 50
+/common/appl/Cadence/INCISIV14.20.007/tools/methodology/UVM/CDNS-1.1d/sv/src/base/uvm_root.svh:457     $finish;
+ncsim> exit
+TOOL:	ncverilog	14.20-s007: Exiting on May 29, 2022 at 14:20:13 ICT  (total: 00:00:06)
