@@ -1,46 +1,162 @@
-1. Implementation	
-	SVA checker is bind to arbiter DUT in file arbiter_tb_top.sv (UVM environment) as below:
+module sva (
+   ARB_RST,
+   ARB_CLK,
+   P0_CLK,
+   P1_CLK,
+   P2_CLK,
+   P3_CLK,
+   P0_REQ_sync,
+   P1_REQ_sync,
+   P2_REQ_sync,
+   P3_REQ_sync,
+   P0_ACK_sync,
+   P1_ACK_sync,
+   P2_ACK_sync,
+   P3_ACK_sync
+   );
 
-We cannot verify with the asynchronous signals (P0…3_REQ, P0…3_ACK), We will check synchronous signals (P0…3_REQ_sync, P0…3_ACK_sync), Please check the "How to verify" sheet.
-The synchronous circuit will be verified independently
+   input ARB_RST;
+   input ARB_CLK;
+   input P0_CLK;
+   input P1_CLK;
+   input P2_CLK;
+   input P3_CLK;
+   input P0_REQ_sync;
+   input P1_REQ_sync;
+   input P2_REQ_sync;
+   input P3_REQ_sync;
+   input P0_ACK_sync;
+   input P1_ACK_sync;
+   input P2_ACK_sync;
+   input P3_ACK_sync;
+
+   wire [3:0] P_REQ_sync;
+   wire [3:0] P_ACK_sync;
+   
+   assign P_REQ_sync = {P3_REQ_sync, P2_REQ_sync, P1_REQ_sync, P0_REQ_sync};
+   assign P_ACK_sync = {P3_ACK_sync, P2_ACK_sync, P1_ACK_sync, P0_ACK_sync};
+
+//// Test asynchronous circuit
+
+//// Test the priority
+property prior_chk_P0_P1;
+   @(posedge ARB_CLK) disable iff (ARB_RST) (P0_ACK_sync == 1) && $fell(P0_REQ_sync) |=>  P1_REQ_sync |=>
+   $rose(P1_ACK_sync);
+endproperty
+ 
+sva_prior_chk_P0_P1: assert property (prior_chk_P0_P1);
+
+property prior_chk_P1_P2;
+   @(posedge ARB_CLK) disable iff (ARB_RST) (P1_ACK_sync == 1) && $fell(P1_REQ_sync) |=>  P2_REQ_sync |=> 
+   $rose(P2_ACK_sync);
+endproperty
+
+sva_prior_chk_P1_P2: assert property (prior_chk_P1_P2);
+
+property prior_chk_P2_P3;
+   @(posedge ARB_CLK) disable iff (ARB_RST) (P2_ACK_sync == 1) && $fell(P2_REQ_sync) |=>  P3_REQ_sync |=> 
+   $rose(P3_ACK_sync);
+endproperty
+
+sva_prior_chk_P2_P3: assert property (prior_chk_P2_P3);
+
+property prior_chk_P3_P0;
+   @(posedge ARB_CLK) disable iff (ARB_RST) (P3_ACK_sync == 1) && $fell(P3_REQ_sync) |=>  P0_REQ_sync |=> 
+   $rose(P0_ACK_sync);
+endproperty
+
+sva_prior_chk_P3_P0: assert property (prior_chk_P3_P0);
+
+//// X,Z propagate or not
+property XZ_propa_chk;
+  @(posedge ARB_CLK) ~ARB_RST |-> not $isunknown(P_ACK_sync);
+endproperty
+
+sva_XZ_propa_chk: assert property (XZ_propa_chk);
 
 
-2. Checker with SVA	
-	
-	Item 1:  The requestors so that requests from higher priority requestors are granted before requests from lower priority requestors
-	Assump that priority: P0 -> P1 -> P2 -> P3 -> P0 -> P1….
-	The waveform
+////Check 1 requestor grant at one time
+property grant_one_chk;
+  @(posedge ARB_CLK) disable iff (ARB_RST) (P_ACK_sync > 0) |-> $onehot(P_ACK_sync);
+endproperty
+sva_grant_one_chk: assert property (grant_one_chk);
+
+//// Check grant when have the request
+property correction_chk;
+   @(posedge ARB_CLK) disable iff (ARB_RST) (P_ACK_sync == 4'b0000) |-> (P_REQ_sync > 4'b0000) |=> $onehot(P_ACK_sync);
+endproperty
+
+sva_correction_chk: assert property (correction_chk);
+  
 
 
-SVA code
+//// Check first-come-first-served
+property chk_P0_P2;
+ @(posedge ARB_CLK) disable iff (ARB_RST) (P0_ACK_sync == 1) && $fell(P0_REQ_sync) |=>  (P1_REQ_sync == 0) && P2_REQ_sync |=>
+   $rose(P2_ACK_sync);
+endproperty
+
+sva_chk_P0_P2: assert property (chk_P0_P2);
+
+property chk_P0_P3;
+ @(posedge ARB_CLK) disable iff (ARB_RST) (P0_ACK_sync == 1) && $fell(P0_REQ_sync) |=>  (P1_REQ_sync == 0) && (P2_REQ_sync == 0) && P3_REQ_sync |=>
+   $rose(P3_ACK_sync);
+endproperty
+
+sva_chk_P0_P3: assert property (chk_P0_P3);
+
+property chk_P1_P3;
+ @(posedge ARB_CLK) disable iff (ARB_RST) (P1_ACK_sync == 1) && $fell(P1_REQ_sync) |=>  (P2_REQ_sync == 0) && P3_REQ_sync |=>
+   $rose(P3_ACK_sync);
+endproperty
+
+sva_chk_P1_P3: assert property (chk_P1_P3);
 
 
-Item 2: The arbitration scheme must implement a form of first-come-first-served selection in addition to priority selection. This function is to reduce the wait time
-P0 is granted. If "P0_REQ_sync is de-active" and "P1_REQ_sync is not active" and "P2_REQ_sync active", P2_ACK_sync will be granted
-P0 is granted. If "P0_REQ_sync is de-active" and "P1_REQ_sync is not active" and "P2_REQ_sync is not active" and "P3_REQ_sync is active", P3_ACK_sync will be granted
-Same as for other requestors.
+property chk_P1_P0;
+ @(posedge ARB_CLK) disable iff (ARB_RST) (P1_ACK_sync == 1) && $fell(P1_REQ_sync) |=>  (P2_REQ_sync == 0) && (P3_REQ_sync == 0) && P0_REQ_sync |=>
+   $rose(P0_ACK_sync);
+endproperty
 
-The waveform
+sva_chk_P1_P0: assert property (chk_P1_P0);
 
+property chk_P2_P0;
+ @(posedge ARB_CLK) disable iff (ARB_RST) (P2_ACK_sync == 1) && $fell(P2_REQ_sync) |=>  (P3_REQ_sync == 0) && P0_REQ_sync |=>
+   $rose(P0_ACK_sync);
+endproperty
 
-SVA code
-P0 is granted. If "P0_REQ is de-active" and "P1_REQ is not active" and "P2_REQ active", P2_ACK will be granted
+sva_chk_P2_P0: assert property (chk_P2_P0);
 
-P0 is granted. If "P0_REQ is de-active" and "P1_REQ is not active" and "P2_REQ is not active" and "P3_REQ is active", P3_ACK will be granted
+property chk_P2_P1;
+ @(posedge ARB_CLK) disable iff (ARB_RST) (P2_ACK_sync == 1) && $fell(P2_REQ_sync) |=>  (P3_REQ_sync == 0) && (P0_REQ_sync == 0) && P1_REQ_sync |=>
+   $rose(P1_ACK_sync);
+endproperty
 
-Item 3: Verifying only 1 requestor granted at one time 
-arbiter just grant for only 1 requestor at one time. It means that {P0_ACK_sync,  P1_ACK_sync, P2_ACK_sync, P3_ACK_sync) belong to {4'b0001; 4'b0010; 4'b0100; 4'b1000) 
-or equal 4'b0000 when reset or no P0…3_REQ active
-
-The waveform
-
-Item 4: Check X/Z propagate or not
-No X/Z propagate in P0…3_ACK_sync signals when no reset
-
-SVA code
+sva_chk_P2_P1: assert property (chk_P2_P1);
 
 
-Item 5: Check the operation of reset signal
-if ARB_RST = 1, all P0…3_ACK_sync signals will equal 4'b0000
+property chk_P3_P1;
+ @(posedge ARB_CLK) disable iff (ARB_RST) (P3_ACK_sync == 1) && $fell(P3_REQ_sync) |=>  (P0_REQ_sync == 0) && P1_REQ_sync |=>
+   $rose(P1_ACK_sync);
+endproperty
 
-SVA code
+sva_chk_P3_P1: assert property (chk_P3_P1);
+
+
+property chk_P3_P2;
+ @(posedge ARB_CLK) disable iff (ARB_RST) (P3_ACK_sync == 1) && $fell(P3_REQ_sync) |=>  (P0_REQ_sync == 0) && (P1_REQ_sync == 0) && P2_REQ_sync |=>
+   $rose(P2_ACK_sync);
+endproperty
+
+sva_chk_P3_P2: assert property (chk_P3_P2);
+
+//// Test the oparation of reset signal
+property rst_chk;
+   @(posedge ARB_CLK) ARB_RST |-> (P_ACK_sync == 4'b0000); 
+endproperty
+
+sva_rst_chk: assert property (rst_chk);
+
+
+
+endmodule
