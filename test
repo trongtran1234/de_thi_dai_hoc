@@ -1,0 +1,27 @@
+Because P0, P1, P2, P3 are asynchronous together, It need a synchronous circuit from P0…3_CLK to ARB_CLK in fv_arbiter
+arbiter core will operate with clock ARB_CLK as below structure
+
+
+We will split the verification into 2 parts as below:	
+	- Verify for synchronous circuit
+	- Verify for arbiter core
+I build an UVM environment and  create checker with SVA (SystemVerilog Assertions) to verify for this arbiter.	
+
+"Verifying the design correctly implements the arbitration. Prioritizes the requests according to the specification. The requestors so that requests from higher priority requestors are granted before requests from lower priority requestors. 
+For example: P0 -> P1 -> P2 -> P3 -> P0 -> P1 -> P2 .....
+In this case, arbiter will use a variable as counter from 0 -> 3. We will verify base on this counter."
+"The arbitration scheme must implement a form of first-come-first-served selection in addition to priority selection. This function is to reduce the wait time.
+For example: P0 is granted. When P0_REQ is de-active. P1 can be granted for the next cycle but P1_REQ is not triggerred. Arbiter will not wait for P1_REQ trigger. In this case, if P2_REQ triggers, P2 will be granted instead of P1 in next cycle.
+
+
+"
+"Verifying only 1 requestor is granted at one time.
+For example: ack signals return from arbiter core include 4'b0001 (P0 is granted) or 4'b0010 (P1 is granted) or 4'b0100 (P2 is granted) or 4'1000 (P3 is granted) or 4'b0000 (No grant)"
+Verifying the delay of P0…3_REQ and P0…3_ACK. When P0…3_REQ trigger, delay 1 cycle to P0…3_ACK signals are granted.
+Verifying no granted cycle. P0 is granted. If P0_REQ = 0, exists 1 cycle no granted before granting for other requestors.
+No X/Z propagate when ARB_RST = 0
+"Verifying the synchronous circuit for each master (Synchronous from P0..3_CLK  to ARB_CLK). 
+No lost data when output from synchronous circuit (The number of transactions input equal the number of transactions output).
+"
+"Verify the operation of reset signal.
+Reset = 0: P0_ACK, P1_ACK, P2_ACK, P3_ACK will be 0."
